@@ -1,18 +1,58 @@
-#include <Arduino.h>
+#include <ESP8266WiFi.h>
+#include <Adafruit_Sensor.h>
+#include <DHT.h>
+#include <DHT_U.h>
 
-// put function declarations here:
-int myFunction(int, int);
+#define DHTPIN D3
+#define DHTTYPE DHT11
 
-void setup() {
-  // put your setup code here, to run once:
-  int result = myFunction(2, 3);
+DHT_Unified dht(DHTPIN, DHTTYPE);
+uint32_t delayMS;
+
+void setup()
+{
+  Serial.begin(115200);
+  dht.begin();
+  delayMS = 5000;
 }
 
-void loop() {
-  // put your main code here, to run repeatedly:
+void sensor_DHT11()
+{
+  sensors_event_t event;
+  dht.temperature().getEvent(&event);
+
+  if (isnan(event.temperature))
+  {
+    Serial.println(F("Error reading temperature!"));
+  }
+  else
+  {
+    Serial.print(F("Temperature: "));
+    Serial.print(event.temperature);
+    Serial.println(F("°C"));
+  }
+
+  dht.humidity().getEvent(&event);
+  if (isnan(event.relative_humidity))
+  {
+    Serial.println(F("Error reading humidity!"));
+  }
+  else
+  {
+    Serial.print(F("Humidity: "));
+    Serial.print(event.relative_humidity);
+    Serial.println(F("%"));
+  }
+}
+void sensor_moisture()
+{
+  Serial.println(F("Pincho de tierra: "));
+  Serial.print(analogRead(A0));
 }
 
-// put function definitions here:
-int myFunction(int x, int y) {
-  return x + y;
+void loop()
+{
+  delay(delayMS);
+  sensor_DHT11();
+  sensor_moisture();
 }
