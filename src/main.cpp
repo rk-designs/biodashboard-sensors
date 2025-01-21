@@ -1,3 +1,4 @@
+// Libraries
 #include <ESP8266WiFi.h>
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
@@ -14,20 +15,26 @@ const char *mqtt_server = "484b32396832453bb03efdd2eae842f2.s2.eu.hivemq.cloud";
 const int mqtt_port = 8883;
 const char *mqtt_user = "hivemq.webclient.1735489924029";
 const char *mqtt_password = ".0pzX74%sGnm&!fPCNB2";
-char tempToPublish[10];
-const char *mqtt_topic_temperature = "sensors/temperature";
-const char *mqtt_topic_relative_humidity = "sensors/relative_humidity";
 
 // DHT11 sensor
 #define DHTPIN D3
 #define DHTTYPE DHT11
 DHT_Unified dht(DHTPIN, DHTTYPE);
+const char *mqtt_topic_temperature = "sensors/temperature";
+const char *mqtt_topic_relative_humidity = "sensors/relative_humidity";
 
-WiFiClientSecure espClient; // WiFi client with TLS support
+// Soil moisture sensor
+#define MOISTURE_PIN A0
+const char *mqtt_topic_soil_moisture = "sensors/soil_moisture";
+
+// WiFi client with TLS support
+WiFiClientSecure espClient;
 PubSubClient client(espClient);
 
+// Global delay
 uint32_t delayMS = 5000;
 
+// Functions - Wifi connect
 void connectWiFi()
 {
   Serial.print("Connecting to Wi-Fi");
@@ -65,10 +72,11 @@ void connectMQTT()
   }
 }
 
+// Functions - Publish
 void publishDHT11_Temp(int temperature)
 {
-  char tempString[10]; // Buffer para almacenar la temperatura como texto
-  itoa(temperature, tempString, 10); // Convierte el número entero a cadena
+  char tempString[10];
+  itoa(temperature, tempString, 10);
   if (client.publish(mqtt_topic_temperature, tempString))
   {
     Serial.print("Temperature published successfully: ");
@@ -82,8 +90,8 @@ void publishDHT11_Temp(int temperature)
 
 void publishDHT11_Relative_Hum(int relative_hum)
 {
-  char relative_humString[10]; // Buffer para almacenar la temperatura como texto
-  itoa(relative_hum, relative_humString, 10); // Convierte el número entero a cadena
+  char relative_humString[10];
+  itoa(relative_hum, relative_humString, 10);
   if (client.publish(mqtt_topic_relative_humidity, relative_humString))
   {
     Serial.print("Relative humidity published successfully: ");
@@ -95,6 +103,22 @@ void publishDHT11_Relative_Hum(int relative_hum)
   }
 }
 
+void publish_soil_moisture(int humidityPercentage)
+{
+  char humiditPercentageString[10];
+  itoa(humidityPercentage, humiditPercentageString, 10);
+  if (client.publish(mqtt_topic_soil_moisture, humiditPercentageString))
+  {
+    Serial.print("Soil humidity published successfully: ");
+    Serial.println(humiditPercentageString);
+  }
+  else
+  {
+    Serial.println("Failed to publish temperature");
+  }
+}
+
+// Functions - Read
 void readDHT11()
 {
   sensors_event_t event;
@@ -125,10 +149,23 @@ void readDHT11()
   }
 }
 
-void readMoisture()
+void read_soil_moisture()
 {
-  Serial.print("Pincho de tierra: ");
-  Serial.println(analogRead(A0));
+  if (!isnan(analogRead(MOISTURE_PIN)))
+  {
+    int humidityPercentage = map(analogRead(MOISTURE_PIN), 0, 1023, 0, 100);
+    Serial.print("Soil moisture value: ");
+    Serial.print(analogRead(MOISTURE_PIN));
+    Serial.print(" / ");
+    Serial.print("Percentage: ");
+    Serial.print(humidityPercentage);
+    Serial.println("%");
+    publish_soil_moisture(humidityPercentage);
+  }
+  else
+  {
+    Serial.println("Error reading soil moisture");
+  }
 }
 
 void setup()
@@ -138,6 +175,9 @@ void setup()
 
   connectWiFi();
   connectMQTT();
+
+  // Pins direction
+  pinMode(MOISTURE_PIN, INPUT);
 }
 
 void loop()
@@ -149,6 +189,6 @@ void loop()
   client.loop();
 
   readDHT11();
-  readMoisture();
+  read_soil_moisture();
   delay(delayMS);
 }
