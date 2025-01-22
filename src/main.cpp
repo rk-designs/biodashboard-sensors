@@ -27,12 +27,53 @@ const char *mqtt_topic_relative_humidity = "sensors/relative_humidity";
 #define MOISTURE_PIN A0
 const char *mqtt_topic_soil_moisture = "sensors/soil_moisture";
 
+// Relay sensor
+#define RELAY_PIN D5
+const char *mqtt_topic_relay = "sensors/relay";
+
 // WiFi client with TLS support
 WiFiClientSecure espClient;
 PubSubClient client(espClient);
 
 // Global delay
 uint32_t delayMS = 5000;
+
+// Function - Callback
+void handleMQTTMessage(char *topic, byte *payload, unsigned int length)
+{
+  payload[length] = '\0'; // Null-terminate the payload
+  String message = String((char *)payload);
+
+  Serial.print("Message received on topic ");
+  Serial.print(topic);
+  Serial.print(": ");
+  Serial.println(message);
+
+  // Handle relay control
+  if (String(topic) == mqtt_topic_relay)
+  {
+    if (message.equalsIgnoreCase("on"))
+    {
+      digitalWrite(RELAY_PIN, LOW); // Turn relay ON
+      Serial.println("Relay turned ON");
+    }
+    else if (message.equalsIgnoreCase("off"))
+    {
+      digitalWrite(RELAY_PIN, HIGH); // Turn relay OFF
+      Serial.println("Relay turned OFF");
+    }
+    else
+    {
+      Serial.println("Invalid command for relay");
+    }
+  }
+}
+
+// Functions - Subscriptions
+void subscriptions()
+{
+  client.subscribe(mqtt_topic_relay);
+}
 
 // Functions - Wifi connect
 void connectWiFi()
@@ -54,6 +95,7 @@ void connectMQTT()
   Serial.print("Connecting to MQTT");
   espClient.setInsecure();
   client.setServer(mqtt_server, mqtt_port);
+  client.setCallback(handleMQTTMessage);
 
   while (!client.connected())
   {
@@ -61,6 +103,7 @@ void connectMQTT()
     if (client.connect("ESP8266Client", mqtt_user, mqtt_password))
     {
       Serial.println("\nMQTT connected");
+      subscriptions();
     }
     else
     {
@@ -178,6 +221,10 @@ void setup()
 
   // Pins direction
   pinMode(MOISTURE_PIN, INPUT);
+  pinMode(RELAY_PIN, OUTPUT);
+
+  // Relay initial mode off
+  digitalWrite(RELAY_PIN, HIGH);
 }
 
 void loop()
@@ -188,7 +235,12 @@ void loop()
   }
   client.loop();
 
-  readDHT11();
-  read_soil_moisture();
-  delay(delayMS);
+  static unsigned long lastReadTime = 0;
+  if (millis() - lastReadTime >= delayMS)
+  {
+    lastReadTime = millis();
+    readDHT11();
+    read_soil_moisture();
+    Serial.println("-----------------------------------------------------");
+  }
 }
