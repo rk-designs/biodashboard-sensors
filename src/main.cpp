@@ -16,12 +16,17 @@ const int mqtt_port = 8883;
 const char *mqtt_user = "hivemq.webclient.1735489924029";
 const char *mqtt_password = ".0pzX74%sGnm&!fPCNB2";
 
+// Sync application switches
+const char *mqtt_topic_switches_sync = "core/sync";
+
 // DHT11 sensor
 #define DHTPIN D3
 #define DHTTYPE DHT11
 DHT_Unified dht(DHTPIN, DHTTYPE);
 const char *mqtt_topic_temperature = "sensors/temperature";
 const char *mqtt_topic_relative_humidity = "sensors/relative_humidity";
+const char *mqtt_topic_switch_dht11 = "switch/dht11";
+const char *DHT11State = "on";
 
 // Soil moisture sensor
 #define MOISTURE_PIN A0
@@ -29,7 +34,7 @@ const char *mqtt_topic_soil_moisture = "sensors/soil_moisture";
 
 // Relay sensor
 #define RELAY_PIN D5
-const char *mqtt_topic_relay = "sensors/relay";
+const char *mqtt_topic_relay_irrigation = "relay/irrigation";
 
 // WiFi client with TLS support
 WiFiClientSecure espClient;
@@ -41,7 +46,7 @@ uint32_t delayMS = 5000;
 // Function - Callback
 void handleMQTTMessage(char *topic, byte *payload, unsigned int length)
 {
-  payload[length] = '\0'; // Null-terminate the payload
+  payload[length] = '\0';
   String message = String((char *)payload);
 
   Serial.print("Message received on topic ");
@@ -49,17 +54,33 @@ void handleMQTTMessage(char *topic, byte *payload, unsigned int length)
   Serial.print(": ");
   Serial.println(message);
 
-  // Handle relay control
-  if (String(topic) == mqtt_topic_relay)
+  String relay_irrigation = digitalRead(RELAY_PIN) == LOW ? "on" : "off";
+
+  // Handle application switches sync
+  if (String(topic) == mqtt_topic_switches_sync)
+  {
+    if (message.equalsIgnoreCase("sync"))
+    {
+      client.publish(mqtt_topic_relay_irrigation, relay_irrigation.c_str());
+      client.publish(mqtt_topic_switch_dht11, DHT11State);
+    }
+    else
+    {
+      Serial.println("Invalid command for switches sync");
+    }
+  }
+
+  // Handle relay ON/OFF control
+  if (String(topic) == mqtt_topic_relay_irrigation)
   {
     if (message.equalsIgnoreCase("on"))
     {
-      digitalWrite(RELAY_PIN, LOW); // Turn relay ON
+      digitalWrite(RELAY_PIN, LOW);
       Serial.println("Relay turned ON");
     }
     else if (message.equalsIgnoreCase("off"))
     {
-      digitalWrite(RELAY_PIN, HIGH); // Turn relay OFF
+      digitalWrite(RELAY_PIN, HIGH);
       Serial.println("Relay turned OFF");
     }
     else
@@ -67,12 +88,33 @@ void handleMQTTMessage(char *topic, byte *payload, unsigned int length)
       Serial.println("Invalid command for relay");
     }
   }
+
+  // Handle DHT11 ON/OFF control
+  if (String(topic) == mqtt_topic_switch_dht11)
+  {
+    if (message.equalsIgnoreCase("on"))
+    {
+      DHT11State = "on";
+      Serial.println("DHT11 turned ON");
+    }
+    else if (message.equalsIgnoreCase("off"))
+    {
+      DHT11State = "off";
+      Serial.println("DHT11 turned OFF");
+    }
+    else
+    {
+      Serial.println("Invalid command for DHT11");
+    }
+  }
 }
 
 // Functions - Subscriptions
 void subscriptions()
 {
-  client.subscribe(mqtt_topic_relay);
+  client.subscribe(mqtt_topic_switches_sync);
+  client.subscribe(mqtt_topic_relay_irrigation);
+  client.subscribe(mqtt_topic_switch_dht11);
 }
 
 // Functions - Wifi connect
@@ -164,31 +206,39 @@ void publish_soil_moisture(int humidityPercentage)
 // Functions - Read
 void readDHT11()
 {
-  sensors_event_t event;
-  dht.temperature().getEvent(&event);
-  if (!isnan(event.temperature))
+  if (strcmp(DHT11State, "on") == 0)
   {
-    int temperature = round(event.temperature);
-    Serial.print("Temperature: ");
-    Serial.println(temperature);
-    publishDHT11_Temp(temperature);
-  }
-  else
-  {
-    Serial.println("Error reading temperature");
-  }
+    sensors_event_t event;
+    dht.temperature().getEvent(&event);
+    if (!isnan(event.temperature))
+    {
+      int temperature = round(event.temperature);
+      Serial.print("Temperature: ");
+      Serial.println(temperature);
+      publishDHT11_Temp(temperature);
+    }
+    else
+    {
+      Serial.println("Error reading temperature");
+    }
 
-  dht.humidity().getEvent(&event);
-  if (!isnan(event.relative_humidity))
-  {
-    Serial.print("Humidity: ");
-    Serial.print(event.relative_humidity);
-    Serial.println("%");
-    publishDHT11_Relative_Hum(event.relative_humidity);
+    dht.humidity().getEvent(&event);
+    if (!isnan(event.relative_humidity))
+    {
+      Serial.print("Humidity: ");
+      Serial.print(event.relative_humidity);
+      Serial.println("%");
+      publishDHT11_Relative_Hum(event.relative_humidity);
+    }
+    else
+    {
+      Serial.println("Error reading humidity");
+    }
   }
   else
   {
-    Serial.println("Error reading humidity");
+    publishDHT11_Temp(0);
+    publishDHT11_Relative_Hum(0);
   }
 }
 
@@ -223,8 +273,12 @@ void setup()
   pinMode(MOISTURE_PIN, INPUT);
   pinMode(RELAY_PIN, OUTPUT);
 
-  // Relay initial mode off
-  digitalWrite(RELAY_PIN, HIGH);
+  // Relay initial mode
+  digitalWrite(RELAY_PIN, HIGH); // OFF
+  digitalWrite(DHTPIN, LOW);     // ON
+
+  // First default sync
+  client.publish(mqtt_topic_switch_dht11, DHT11State);
 }
 
 void loop()
