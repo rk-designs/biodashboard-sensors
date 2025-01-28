@@ -31,8 +31,10 @@ const char *DHT11State = "on";
 // Soil moisture sensor
 #define MOISTURE_PIN A0
 const char *mqtt_topic_soil_moisture = "sensors/soil_moisture";
+const char *mqtt_topic_switch_soil_moisture = "switch/soil_moisture";
+const char *SoilMoistureState = "on";
 
-// Relay sensor
+// Irrigation Relay sensor
 #define RELAY_PIN D5
 const char *mqtt_topic_relay_irrigation = "relay/irrigation";
 
@@ -63,6 +65,7 @@ void handleMQTTMessage(char *topic, byte *payload, unsigned int length)
     {
       client.publish(mqtt_topic_relay_irrigation, relay_irrigation.c_str());
       client.publish(mqtt_topic_switch_dht11, DHT11State);
+      client.publish(mqtt_topic_switch_soil_moisture, SoilMoistureState);
     }
     else
     {
@@ -70,7 +73,7 @@ void handleMQTTMessage(char *topic, byte *payload, unsigned int length)
     }
   }
 
-  // Handle relay ON/OFF control
+  // Handle relay irrigation ON/OFF control
   if (String(topic) == mqtt_topic_relay_irrigation)
   {
     if (message.equalsIgnoreCase("on"))
@@ -107,6 +110,25 @@ void handleMQTTMessage(char *topic, byte *payload, unsigned int length)
       Serial.println("Invalid command for DHT11");
     }
   }
+
+  // Handle Soil moisture ON/OFF control
+  if (String(topic) == mqtt_topic_switch_soil_moisture)
+  {
+    if (message.equalsIgnoreCase("on"))
+    {
+      SoilMoistureState = "on";
+      Serial.println("Soil moisture turned ON");
+    }
+    else if (message.equalsIgnoreCase("off"))
+    {
+      SoilMoistureState = "off";
+      Serial.println("Soil moisture turned OFF");
+    }
+    else
+    {
+      Serial.println("Invalid command for Soil moisture");
+    }
+  }
 }
 
 // Functions - Subscriptions
@@ -115,6 +137,7 @@ void subscriptions()
   client.subscribe(mqtt_topic_switches_sync);
   client.subscribe(mqtt_topic_relay_irrigation);
   client.subscribe(mqtt_topic_switch_dht11);
+  client.subscribe(mqtt_topic_switch_soil_moisture);
 }
 
 // Functions - Wifi connect
@@ -244,20 +267,28 @@ void readDHT11()
 
 void read_soil_moisture()
 {
-  if (!isnan(analogRead(MOISTURE_PIN)))
+  if (strcmp(SoilMoistureState, "on") == 0)
   {
-    int humidityPercentage = map(analogRead(MOISTURE_PIN), 0, 1023, 0, 100);
-    Serial.print("Soil moisture value: ");
-    Serial.print(analogRead(MOISTURE_PIN));
-    Serial.print(" / ");
-    Serial.print("Percentage: ");
-    Serial.print(humidityPercentage);
-    Serial.println("%");
-    publish_soil_moisture(humidityPercentage);
+    if (!isnan(analogRead(MOISTURE_PIN)))
+    {
+      int humidityPercentage = map(analogRead(MOISTURE_PIN), 0, 1023, 0, 100);
+      Serial.print("Soil moisture value: ");
+      Serial.print(analogRead(MOISTURE_PIN));
+      Serial.print(" / ");
+      Serial.print("Percentage: ");
+      Serial.print(humidityPercentage);
+      Serial.println("%");
+      publish_soil_moisture(humidityPercentage);
+    }
+    else
+    {
+      Serial.println("Error reading soil moisture");
+    }
   }
   else
   {
-    Serial.println("Error reading soil moisture");
+    int humidityPercentage = 0;
+    publish_soil_moisture(humidityPercentage);
   }
 }
 
@@ -279,6 +310,7 @@ void setup()
 
   // First default sync
   client.publish(mqtt_topic_switch_dht11, DHT11State);
+  client.publish(mqtt_topic_switch_soil_moisture, SoilMoistureState);
 }
 
 void loop()
